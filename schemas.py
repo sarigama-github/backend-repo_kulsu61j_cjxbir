@@ -41,11 +41,23 @@ class Product(BaseModel):
     rating: Optional[float] = Field(4.5, ge=0, le=5, description="Average rating out of 5")
     badge: Optional[str] = Field(None, description="Optional badge text like 'New' or 'Sale'")
 
-# Add your own schemas here:
-# --------------------------------------------------
+class OrderItem(BaseModel):
+    product_id: str = Field(..., description="ID of the product")
+    title: str = Field(..., description="Snapshot of product title at purchase time")
+    price: float = Field(..., ge=0, description="Unit price at purchase time")
+    quantity: int = Field(1, ge=1, description="Quantity of this product")
+    size: Optional[str] = Field(None, description="Selected size")
+    color: Optional[str] = Field(None, description="Selected color (name or hex)")
+    image_url: Optional[str] = Field(None, description="Image preview")
 
-# Note: The Flames database viewer will automatically:
-# 1. Read these schemas from GET /schema endpoint
-# 2. Use them for document validation when creating/editing
-# 3. Handle all database operations (CRUD) directly
-# 4. You don't need to create any database endpoints!
+class Order(BaseModel):
+    """
+    Orders collection schema
+    Collection name: "order"
+    """
+    email: str = Field(..., description="Customer email")
+    items: List[OrderItem] = Field(..., description="Items in the order")
+    subtotal: float = Field(..., ge=0)
+    shipping: float = Field(0.0, ge=0)
+    total: float = Field(..., ge=0)
+    note: Optional[str] = Field(None)
