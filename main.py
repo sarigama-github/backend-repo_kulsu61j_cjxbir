@@ -7,7 +7,7 @@ from bson import ObjectId
 import re
 
 from database import db, create_document, get_documents
-from schemas import Product, Order, OrderItem
+from schemas import Product, Order, OrderItem, Review, Wishlist
 
 app = FastAPI(title="Clothing Shop API")
 
@@ -123,6 +123,19 @@ def get_product(product_id: str = Path(...)):
         raise HTTPException(status_code=500, detail=str(e))
 
 
+@app.get("/api/categories", response_model=List[str])
+def list_categories():
+    try:
+        if db is None:
+            raise Exception("Database not available")
+        cats = db["product"].distinct("category")
+        cats = [c for c in cats if isinstance(c, str)]
+        cats.sort()
+        return cats
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
 @app.post("/api/products", response_model=dict)
 def create_product(payload: ProductCreate):
     try:
@@ -145,6 +158,121 @@ def create_order(payload: OrderCreate):
         order_data["total"] = round(total, 2)
         new_id = create_document("order", order_data)
         return {"id": new_id}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+# Reviews Endpoints
+class ReviewCreate(Review):
+    pass
+
+
+@app.post("/api/reviews", response_model=dict)
+def create_review(payload: ReviewCreate):
+    try:
+        # ensure product exists
+        try:
+            _ = get_product(payload.product_id)  # will raise 404 if not
+        except HTTPException as he:
+            if he.status_code == 404:
+                raise
+        new_id = create_document("review", payload)
+        return {"id": new_id}
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/api/products/{product_id}/reviews", response_model=List[Review])
+def list_reviews_for_product(product_id: str = Path(...)):
+    try:
+        docs = get_documents("review", {"product_id": product_id}, limit=200)
+        # No _id in schema, so pop it
+        for d in docs:
+            d.pop("_id", None)
+        return [Review(**d) for d in docs]
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/api/products/{product_id}/rating", response_model=dict)
+def get_product_rating(product_id: str = Path(...)):
+    try:
+        docs = get_documents("review", {"product_id": product_id}, limit=1000)
+        ratings = [int(d.get("rating", 0)) for d in docs if d.get("rating") is not None]
+        count = len(ratings)
+        avg = round(sum(ratings) / count, 2) if count else 0
+        return {"product_id": product_id, "average": avg, "count": count}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+# Wishlist Endpoints
+class WishlistCreate(Wishlist):
+    pass
+
+
+@app.get("/api/wishlist", response_model=List[dict])
+def get_wishlist(email: str = Query(...)):
+    try:
+        if db is None:
+            raise Exception("Database not available")
+        docs = list(db["wishlist"].find({"email": email}))
+        # Optionally join with product details
+        results = []
+        for w in docs:
+            w_id = str(w.get("_id")) if w.get("_id") else None
+            pid = w.get("product_id")
+            prod = None
+            try:
+                prod = db["product"].find_one({"_id": ObjectId(pid)})
+            except Exception:
+                prod = db["product"].find_one({"id": pid})
+            if prod:
+                prod_id = str(prod.get("_id")) if prod.get("_id") else None
+                prod.pop("_id", None)
+            else:
+                prod_id = None
+                prod = None
+            results.append({
+                "id": w_id,
+                "product_id": pid,
+                "product": ({"id": prod_id, **prod} if prod else None)
+            })
+        return results
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post("/api/wishlist", response_model=dict)
+def add_to_wishlist(payload: WishlistCreate):
+    try:
+        # ensure product exists
+        try:
+            _ = get_product(payload.product_id)
+        except HTTPException as he:
+            if he.status_code == 404:
+                raise
+        # prevent duplicates for same email+product
+        existing = db["wishlist"].find_one({"email": payload.email, "product_id": payload.product_id})
+        if existing:
+            return {"id": str(existing["_id"])}
+        new_id = create_document("wishlist", payload)
+        return {"id": new_id}
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.delete("/api/wishlist", response_model=dict)
+def remove_from_wishlist(email: str = Query(...), product_id: str = Query(...)):
+    try:
+        if db is None:
+            raise Exception("Database not available")
+        res = db["wishlist"].delete_one({"email": email, "product_id": product_id})
+        return {"deleted": res.deleted_count}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 

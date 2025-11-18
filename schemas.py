@@ -61,3 +61,22 @@ class Order(BaseModel):
     shipping: float = Field(0.0, ge=0)
     total: float = Field(..., ge=0)
     note: Optional[str] = Field(None)
+
+class Review(BaseModel):
+    """
+    Reviews collection schema
+    Collection name: "review"
+    """
+    product_id: str = Field(..., description="ID of the product being reviewed")
+    rating: int = Field(..., ge=1, le=5, description="Rating from 1 to 5")
+    comment: Optional[str] = Field(None, description="Optional review text")
+    author: Optional[str] = Field(None, description="Display name of reviewer")
+    email: Optional[str] = Field(None, description="Reviewer email (optional)")
+
+class Wishlist(BaseModel):
+    """
+    Wishlist collection schema (one document per wish pair)
+    Collection name: "wishlist"
+    """
+    email: str = Field(..., description="Customer email owning the wishlist item")
+    product_id: str = Field(..., description="Wished product id")
